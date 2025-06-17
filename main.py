@@ -1,13 +1,22 @@
-from VAD import SpeechVADTranscriber
+from utils.mask import Mask
+from utils.VAD import SpeechVADTranscriber
+import warnings
 
-# this is the initialization of the SpeechVADTranscriber class
+warnings.filterwarnings("ignore")
+
+# this is the initialization of the SpeechVADTranscriber and mask classes
 # it loads the Silero VAD model and Whisper model into the memory for transcription
-transcriber = SpeechVADTranscriber(whisper_model_size="turbo")
+transcriber = SpeechVADTranscriber(
+    whisper_model_size="turbo"
+)  # "tiny", "base", "small", "medium", "large", "turbo"
+mask = Mask(t5_model="base")  # "small", "base", "large", "3b", "11b"
+
+print("Models loaded successfully")
 
 audio_file_paths = [
-    "sample.mp3",
-    "output_muted.mp3",
-    "output_muted_400.mp3",
+    "sample_audio/sample.mp3",
+    "sample_audio/output_muted.mp3",
+    "sample_audio/output_muted_400.mp3",
 ]
 
 for each in audio_file_paths:
@@ -21,8 +30,10 @@ for each in audio_file_paths:
             min_silence_duration_ms=100,  # Minimum silence duration
         )
 
-        print("FINAL TRANSCRIPTION:")
-        print(transcription)
+        print("transcript = ", transcription)
+
+        result = mask.fill_masks(transcription)
+        print(f"Reconstructed sentence: {result}")
 
     except FileNotFoundError:
         print(f"Error: Audio file '{each}' not found.")

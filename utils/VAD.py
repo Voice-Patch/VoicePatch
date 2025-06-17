@@ -3,19 +3,26 @@ import torchaudio
 import whisper
 import numpy as np
 from typing import List, Tuple
-import warnings
-
-warnings.filterwarnings("ignore")
 
 
 class SpeechVADTranscriber:
     def __init__(self, whisper_model_size: str = "base"):
+        """
+        Initialize the SpeechVADTranscriber with Silero VAD and Whisper models.
+        Args:
+            whisper_model_size (str): Size of the Whisper model to use
+                Options: "tiny", "base", "small", "medium", "large", "turbo"
+
+        """
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {self.device}")
         self.vad_model, utils = torch.hub.load(
             repo_or_dir="snakers4/silero-vad",
             model="silero_vad",
             force_reload=False,
             onnx=False,
         )
+        self.vad_model = self.vad_model.to(self.device)
 
         self.get_speech_timestamps = utils[0]
         self.save_audio = utils[1]
@@ -23,9 +30,7 @@ class SpeechVADTranscriber:
         self.VADIterator = utils[3]
         self.collect_chunks = utils[4]
 
-        self.whisper_model = whisper.load_model(whisper_model_size)
-
-        print("Models loaded successfully")
+        self.whisper_model = whisper.load_model(whisper_model_size, device=self.device)
 
     def load_audio(self, audio_path: str, target_sr: int = 16000) -> torch.Tensor:
         """
@@ -70,6 +75,9 @@ class SpeechVADTranscriber:
         Returns:
             List of speech segments with start and end timestamps
         """
+        
+        audio = audio.to(self.device)
+        
         speech_timestamps = self.get_speech_timestamps(
             audio,
             self.vad_model,
@@ -145,7 +153,7 @@ class SpeechVADTranscriber:
             Transcribed text
         """
         # Convert to numpy array for Whisper
-        audio_np = audio_segment.numpy().astype(np.float32)
+        audio_np = audio_segment.cpu().numpy().astype(np.float32)
 
         # Whisper expects audio to be normalized
         if audio_np.max() > 1.0:
@@ -207,21 +215,15 @@ class SpeechVADTranscriber:
                     )
                     if transcription:
                         final_transcription.append(transcription)
-                        print(
-                            f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): {transcription[:50]}..."
-                        )
+                        #print(f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): {transcription[:50]}..."))
                     else:
                         final_transcription.append("[MASK]")
-                        print(
-                            f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): Empty transcription -> [MASK]"
-                        )
+                        #print(f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): Empty transcription -> [MASK]")
                 else:
                     final_transcription.append("[MASK]")
             else:
                 final_transcription.append("[MASK]")
-                print(
-                    f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): Non-speech -> [MASK]"
-                )
+                #print(f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): Non-speech -> [MASK]")
         result = " ".join(final_transcription)
 
         result = result.replace(". [MASK]", " [MASK]")
