@@ -1,4 +1,5 @@
 import warnings
+import wave
 
 from f5_tts.api import F5TTS
 from utils.audiotools import FFmpegAudio, StandardAudio
@@ -39,8 +40,14 @@ for each in audio_file_paths:
         result = mask.fill_masks(transcription)
         print(f"Reconstructed sentence: {result}")
 
-        # audio = StandardAudio.from_ffmpeg_audio(FFmpegAudio.from_audio_object("..."))
-        # audio.infer(f5_tts_instance, "There was a good day.")
+        audio = StandardAudio.from_ffmpeg_audio(FFmpegAudio.from_audio_object(each))
+        wave_bytes, sr = audio.infer(f5_tts_instance, result)
+
+        with wave.open(f"{each}_synthesized.wav", "wb") as wf:
+            wf.setframerate(sr)
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.writeframes(wave_bytes.tobytes())
 
     except FileNotFoundError:
         print(f"Error: Audio file '{each}' not found.")
