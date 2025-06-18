@@ -1,6 +1,9 @@
+import warnings
+
+from f5_tts.api import F5TTS
+from utils.audiotools import FFmpegAudio, StandardAudio
 from utils.mask import Mask
 from utils.VAD import SpeechVADTranscriber
-import warnings
 
 warnings.filterwarnings("ignore")
 
@@ -10,6 +13,7 @@ transcriber = SpeechVADTranscriber(
     whisper_model_size="turbo"
 )  # "tiny", "base", "small", "medium", "large", "turbo"
 mask = Mask(t5_model="base")  # "small", "base", "large", "3b", "11b"
+f5_tts_instance = F5TTS(model="E2TTS_Base", vocoder_local_path="./models/vocos/")
 
 print("Models loaded successfully")
 
@@ -34,6 +38,9 @@ for each in audio_file_paths:
 
         result = mask.fill_masks(transcription)
         print(f"Reconstructed sentence: {result}")
+
+        # audio = StandardAudio.from_ffmpeg_audio(FFmpegAudio.from_audio_object("..."))
+        # audio.infer(f5_tts_instance, "There was a good day.")
 
     except FileNotFoundError:
         print(f"Error: Audio file '{each}' not found.")
