@@ -13,7 +13,7 @@ transcriber = SpeechVADTranscriber(
     whisper_model_size="turbo"
 )  # "tiny", "base", "small", "medium", "large", "turbo"
 mask = Mask(t5_model="base")  # "small", "base", "large", "3b", "11b"
-f5_tts_instance = F5TTS(model="E2TTS_Base", vocoder_local_path="./models/vocos/")
+f5_tts_instance = F5TTS(model="E2TTS_Base")
 
 print("Models loaded successfully")
 
