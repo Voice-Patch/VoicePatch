@@ -3,6 +3,8 @@
 
 `pip install -r requirements.txt`
 
+**Make sure ffmpeg is installed**
+
 `uvicorn main:app --reload --port 8080`
 
 then access at :8080
