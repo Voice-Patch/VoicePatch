@@ -75,9 +75,9 @@ class SpeechVADTranscriber:
         Returns:
             List of speech segments with start and end timestamps
         """
-        
+
         audio = audio.to(self.device)
-        
+
         speech_timestamps = self.get_speech_timestamps(
             audio,
             self.vad_model,
@@ -215,15 +215,15 @@ class SpeechVADTranscriber:
                     )
                     if transcription:
                         final_transcription.append(transcription)
-                        #print(f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): {transcription[:50]}..."))
+                        # print(f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): {transcription[:50]}..."))
                     else:
                         final_transcription.append("[MASK]")
-                        #print(f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): Empty transcription -> [MASK]")
+                        # print(f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): Empty transcription -> [MASK]")
                 else:
                     final_transcription.append("[MASK]")
             else:
                 final_transcription.append("[MASK]")
-                #print(f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): Non-speech -> [MASK]")
+                # print(f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): Non-speech -> [MASK]")
         result = " ".join(final_transcription)
 
         result = result.replace(". [MASK]", " [MASK]")
