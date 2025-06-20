@@ -8,3 +8,7 @@
 `uvicorn main:app --reload --port 8080`
 
 then access at :8080
+
+### Run gradio demo page
+
+`python gradio_app.py`
