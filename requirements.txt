@@ -7,5 +7,6 @@ typing-extensions==4.14.0
 pydub==0.25.1
 f5-tts==1.1.5
 whisper_timestamped==1.15.8
+sentencepiece==0.2.0
 gradio
 
