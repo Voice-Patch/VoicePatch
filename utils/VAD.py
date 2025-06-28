@@ -12,7 +12,6 @@ class SpeechVADTranscriber:
         Args:
             whisper_model_size (str): Size of the Whisper model to use
                 Options: "tiny", "base", "small", "medium", "large", "turbo"
-
         """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
@@ -158,9 +157,8 @@ class SpeechVADTranscriber:
         # Whisper expects audio to be normalized
         if audio_np.max() > 1.0:
             audio_np = audio_np / np.abs(audio_np).max()
-
         try:
-            result = self.whisper_model.transcribe(audio_np)
+            result = self.whisper_model.transcribe(audio_np, fp16=False)
             return result["text"].strip()
         except Exception as e:
             print(f"Transcription error: {e}")
@@ -172,22 +170,17 @@ class SpeechVADTranscriber:
         vad_threshold: float = 0.5,
         min_speech_duration_ms: int = 250,
         min_silence_duration_ms: int = 100,
-    ) -> str:
+    ) -> Tuple[str, List[dict]]:
         """
-        Main processing function that combines VAD and transcription.
-
-        Args:
-            audio_path: Path to input audio file
-            vad_threshold: VAD sensitivity threshold
-            min_speech_duration_ms: Minimum speech segment duration
-            min_silence_duration_ms: Minimum silence segment duration
-
+        Main processing function. Combines VAD, transcription, and calculates silent gaps.
         Returns:
-            Final transcription with [MASK] for non-speech segments
+            A tuple containing:
+            - Final transcription with [MASK] for non-speech segments (str)
+            - A list of dictionaries representing the silent gaps (List[dict])
         """
-
         audio = self.load_audio(audio_path)
         sample_rate = 16000
+        audio_duration = len(audio) / sample_rate
 
         speech_segments = self.detect_speech_segments(
             audio,
@@ -202,31 +195,34 @@ class SpeechVADTranscriber:
         )
 
         final_transcription = []
-
-        for i, (audio_segment, start_time, end_time, is_speech) in enumerate(
-            all_segments
-        ):
-            duration = end_time - start_time
-
+        for i, (audio_segment, start_time, end_time, is_speech) in enumerate(all_segments):
             if is_speech:
                 if len(audio_segment) > 0:
-                    transcription = self.transcribe_audio_segment(
-                        audio_segment, sample_rate
-                    )
+                    transcription = self.transcribe_audio_segment(audio_segment, sample_rate)
                     if transcription:
                         final_transcription.append(transcription)
-                        # print(f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): {transcription[:50]}..."))
                     else:
                         final_transcription.append("[MASK]")
-                        # print(f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): Empty transcription -> [MASK]")
                 else:
                     final_transcription.append("[MASK]")
             else:
                 final_transcription.append("[MASK]")
-                # print(f"Segment {i + 1} ({start_time:.1f}-{end_time:.1f}s): Non-speech -> [MASK]")
+
+        # --- New Logic to Calculate Silent Gaps ---
+        vad_gaps = []
+        last_speech_end = 0.0
+        for seg in speech_segments:
+            # If there's a gap between the last speech end and the current start
+            if seg["start"] > last_speech_end:
+                vad_gaps.append({"start": last_speech_end, "end": seg["start"]})
+            last_speech_end = seg["end"]
+        # Check for a final gap after the last speech segment
+        if audio_duration > last_speech_end:
+            vad_gaps.append({"start": last_speech_end, "end": audio_duration})
+        
+        # --- End of New Logic ---
+
         result = " ".join(final_transcription)
+        result = result.replace(". [MASK]", " [MASK]").replace(".[MASK]", " [MASK]")
 
-        result = result.replace(". [MASK]", " [MASK]")
-        result = result.replace(".[MASK]", " [MASK]")
-
-        return result
+        return result, vad_gaps
