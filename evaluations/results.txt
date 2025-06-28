@@ -1,0 +1,18 @@
+Number of samples evaluated: 104
+
+- Exact Accuracy: 0.5877
+- Contextual Word Similarity: 0.8988
+
+- Sentence Transformer Similarity: 0.9628
+- METEOR Score: 0.9604
+
+BERTScore Metrics:
+- Precision: 0.9835
+- Recall: 0.9867
+- F1: 0.9851
+
+ROUGE Metrics:
+- ROUGE-1 F1: 0.9518
+- ROUGE-2 F1: 0.9183
+- ROUGE-L F1: 0.9509
+- ROUGE-Lsum F1: 0.9509

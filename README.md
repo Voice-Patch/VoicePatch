@@ -5,9 +5,9 @@
 
 **Make sure ffmpeg is installed**
 
-`uvicorn main:app --reload --port 8080`
+`uvicorn main:app --reload --port 8000`
 
-then access at :8080
+then access at :8000
 
 ### Run gradio demo page
 
