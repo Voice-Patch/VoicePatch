@@ -9,6 +9,6 @@
 
 then access at :8000
 
-### Run gradio demo page
+### Run the frontend
 
-`python gradio_app.py`
+- GOTO VoicePatch/VoicePatch-Frontend
