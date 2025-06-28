@@ -3,10 +3,10 @@ import wave
 import base64
 import io
 import os
-import uuid
 import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
+from pydub import AudioSegment
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
@@ -119,8 +119,10 @@ async def process_audio_file(
     temp_file_path = None
     try:
         file_content = await file.read()
-        file_extension = os.path.splitext(file.filename)[1] if file.filename else ".tmp"
-        temp_filename = f"http_temp_audio_{uuid.uuid4()}{file_extension}"
+
+        file_extension = os.path.splitext(file.filename)[1] if file.filename else ".mp3"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+        temp_filename = f"temp_audio_{timestamp}{file_extension}"
         temp_file_path = os.path.join("temp", temp_filename)
 
         with open(temp_file_path, "wb") as temp_file:
@@ -242,25 +244,41 @@ async def process_audio_websocket(websocket: WebSocket):
     print("Client connected via WebSocket, engine ready signal sent.")
     try:
         while True:
+            
             payload = await websocket.receive_json()
             temp_audio_path = None
             
             try:
                 audio_data_b64 = payload.get("audio_data")
+                file_name = payload.get("file_name")
                 vad_params = payload.get("vad_params", {})
 
                 header, encoded = audio_data_b64.split(",", 1)
                 audio_bytes = base64.b64decode(encoded)
-                temp_audio_path = os.path.join("temp", f"ws_temp_audio_{uuid.uuid4()}.wav")
 
-                with wave.open(temp_audio_path, 'wb') as wf:
-                    wf.setnchannels(1) 
-                    wf.setsampwidth(2) 
-                    wf.setframerate(16000)
-                    wf.writeframes(audio_bytes)
+                original_extension = os.path.splitext(file_name)[1]
+
+                in_memory_file = io.BytesIO(audio_bytes)
+                
+                # Load the audio from the in-memory file, explicitly setting the format
+                audio_segment = AudioSegment.from_file(in_memory_file, format=original_extension.replace('.', ''))
+                
+                # --- Export as a standardized WAV file for your ML models ---
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                temp_audio_path = os.path.join("temp", f"temp_audio_{timestamp}.wav")
+                
+                # Ensure it's mono, 16kHz, and 16-bit for your models
+                audio_segment = audio_segment.set_channels(1)
+                audio_segment = audio_segment.set_frame_rate(16000)
+                audio_segment = audio_segment.set_sample_width(2)
+                
+                audio_segment.export(temp_audio_path, format="wav")
+                
+                print(f"Successfully converted {file_name} to {temp_audio_path}")
 
                 # Stage 1: Transcription
                 print(f"WS Step 1: Starting transcription on {temp_audio_path}...")
+
                 transcript_result, vad_gaps = transcriber.process_audio_file(
                     temp_audio_path,
                     vad_threshold=float(vad_params.get("threshold", 0.5)),
