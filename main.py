@@ -1,13 +1,17 @@
 import warnings
 import wave
+import base64
 import io
 import os
+import uuid
+import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from f5_tts.api import F5TTS
@@ -67,18 +71,28 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# --- Mount static directory for serving generated files ---
+app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
+
+
+# --- HTTP Endpoints ---
 
 @app.get("/")
-async def root():
-    return {"message": "Audio Processing API is running"}
+async def read_root():
+    return {"status": "ok", "message": "VoicePatch backend is running."}
 
 
 @app.get("/health")
@@ -102,38 +116,35 @@ async def process_audio_file(
     if not all([transcriber, mask, f5_tts_instance]):
         raise HTTPException(status_code=503, detail="Models not loaded yet")
 
+    temp_file_path = None
     try:
         file_content = await file.read()
-
-        file_extension = os.path.splitext(file.filename)[1] if file.filename else ".mp3"
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-        temp_filename = f"temp_audio_{timestamp}{file_extension}"
+        file_extension = os.path.splitext(file.filename)[1] if file.filename else ".tmp"
+        temp_filename = f"http_temp_audio_{uuid.uuid4()}{file_extension}"
         temp_file_path = os.path.join("temp", temp_filename)
 
         with open(temp_file_path, "wb") as temp_file:
             temp_file.write(file_content)
 
-        try:
-            transcription = transcriber.process_audio_file(
-                temp_file_path,
-                vad_threshold=vad_threshold,
-                min_speech_duration_ms=min_speech_duration_ms,
-                min_silence_duration_ms=min_silence_duration_ms,
-            )
+        transcription, _ = transcriber.process_audio_file(
+            temp_file_path,
+            vad_threshold=vad_threshold,
+            min_speech_duration_ms=min_speech_duration_ms,
+            min_silence_duration_ms=min_silence_duration_ms,
+        )
 
-            reconstructed_sentence = mask.fill_masks(transcription)
+        reconstructed_sentence = mask.fill_masks(transcription)
 
-            return ProcessAudioResponse(
-                transcript=transcription,
-                reconstructed_sentence=reconstructed_sentence,
-                message="Audio processed successfully",
-            )
-        finally:
-            if os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-
+        return ProcessAudioResponse(
+            transcript=transcription,
+            reconstructed_sentence=reconstructed_sentence,
+            message="Audio processed successfully",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio: {str(e)}")
+    finally:
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
 
 
 @app.post("/process-and-synthesize")
@@ -149,6 +160,7 @@ async def process_and_synthesize_audio(
     if not all([transcriber, mask, f5_tts_instance]):
         raise HTTPException(status_code=503, detail="Models not loaded yet")
 
+    temp_file_path = None
     try:
         file_content = await file.read()
 
@@ -163,7 +175,7 @@ async def process_and_synthesize_audio(
             temp_file.write(file_content)
 
         try:
-            transcription = transcriber.process_audio_file(
+            transcription, _ = transcriber.process_audio_file(
                 temp_file_path,
                 vad_threshold=vad_threshold,
                 min_speech_duration_ms=min_speech_duration_ms,
@@ -217,3 +229,85 @@ async def process_and_synthesize_audio(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio: {str(e)}")
+    finally:
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+
+# --- WebSocket Endpoint for Real-time Processing ---
+@app.websocket("/ws/process")
+async def process_audio_websocket(websocket: WebSocket):
+    await websocket.accept()
+    await websocket.send_json({"step": "engine_ready", "message": "Backend models loaded and ready."})
+    print("Client connected via WebSocket, engine ready signal sent.")
+    try:
+        while True:
+            payload = await websocket.receive_json()
+            temp_audio_path = None
+            
+            try:
+                audio_data_b64 = payload.get("audio_data")
+                vad_params = payload.get("vad_params", {})
+
+                header, encoded = audio_data_b64.split(",", 1)
+                audio_bytes = base64.b64decode(encoded)
+                temp_audio_path = os.path.join("temp", f"ws_temp_audio_{uuid.uuid4()}.wav")
+
+                with wave.open(temp_audio_path, 'wb') as wf:
+                    wf.setnchannels(1) 
+                    wf.setsampwidth(2) 
+                    wf.setframerate(16000)
+                    wf.writeframes(audio_bytes)
+
+                # Stage 1: Transcription
+                print(f"WS Step 1: Starting transcription on {temp_audio_path}...")
+                transcript_result, vad_gaps = transcriber.process_audio_file(
+                    temp_audio_path,
+                    vad_threshold=float(vad_params.get("threshold", 0.5)),
+                    min_speech_duration_ms=int(vad_params.get("minSpeechMs", 250)),
+                    min_silence_duration_ms=int(vad_params.get("minSilenceMs", 100)),
+                )
+                await websocket.send_json({"step": "transcription", "data": {"transcript": transcript_result, "vadGaps": vad_gaps}})
+                print(f"WS Step 1: Transcription complete. Sent: {transcript_result}")
+                await asyncio.sleep(0.1)
+
+                # Stage 2: Reconstruction
+                print("WS Step 2: Starting reconstruction...")
+                reconstructed_sentence = mask.fill_masks(transcript_result)
+                original_words = transcript_result.split()
+                final_words = reconstructed_sentence.split()
+                reconstructed_only_words = " ".join([word for word in final_words if word not in original_words])
+                await websocket.send_json({"step": "reconstruction", "data": {"reconstructed_words": reconstructed_only_words, "full_reconstructed_text": reconstructed_sentence}})
+                print(f"WS Step 2: Reconstruction complete. Sent: {reconstructed_sentence}")
+                await asyncio.sleep(0.1)
+
+                # Stage 3: Synthesis
+                print("WS Step 3: Starting synthesis...")
+                audio = StandardAudio.from_ffmpeg_audio(FFmpegAudio.from_audio_object(temp_audio_path))
+                wave_bytes, sr = audio.infer(f5_tts_instance, reconstructed_sentence)
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_filename = f"synthesized_{timestamp}.wav"
+                output_path = os.path.join("outputs", output_filename)
+
+                with wave.open(output_path, "wb") as wf:
+                    wf.setframerate(sr)
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.writeframes(wave_bytes.tobytes())
+
+                await websocket.send_json({"step": "synthesis", "data": {"audio_url": f"/{output_path.replace(os.path.sep, '/')}", "synthesisFilename": output_filename}})
+                print(f"WS Step 3: Synthesis complete. File saved to {output_path}")
+                print("WS processing finished. Waiting for next request.")
+
+            finally:
+                if temp_audio_path and os.path.exists(temp_audio_path):
+                    os.remove(temp_audio_path)
+                    print(f"Cleaned up WebSocket temporary file: {temp_audio_path}")
+
+    except WebSocketDisconnect:
+        print("WebSocket client disconnected.")
+    except Exception as e:
+        print(f"An error occurred in WebSocket: {e}")
+        if not websocket.client_state.name == 'DISCONNECTED':
+             await websocket.send_json({"error": str(e)})
