@@ -7,6 +7,7 @@ from sentence_transformers import SentenceTransformer
 import evaluate
 from bert_score import score as bert_score
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics import f1_score, precision_score, recall_score
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -209,73 +210,73 @@ class CompositeMLMEvaluator:
         self.results["sentence_transformer_similarity"] = avg_similarity
         return avg_similarity
 
-    def bert_score_evaluation(self) -> dict:
-        """Calculate BERTScore - SOTA metric for text generation quality."""
-        originals = self.df["Original"].tolist()
-        llm_replaced = self.df["LLM Replaced text"].tolist()
+    # def bert_score_evaluation(self) -> dict:
+    #     """Calculate BERTScore - SOTA metric for text generation quality."""
+    #     originals = self.df["Original"].tolist()
+    #     llm_replaced = self.df["LLM Replaced text"].tolist()
 
-        # Calculate BERTScore
-        P, R, F1 = bert_score(llm_replaced, originals, lang="en", verbose=False)
+    #     # Calculate BERTScore
+    #     P, R, F1 = bert_score(llm_replaced, originals, lang="en", verbose=False)
 
-        bert_scores = {
-            "bertscore_precision": P.mean().item(),
-            "bertscore_recall": R.mean().item(),
-            "bertscore_f1": F1.mean().item(),
-        }
+    #     bert_scores = {
+    #         "bertscore_precision": P.mean().item(),
+    #         "bertscore_recall": R.mean().item(),
+    #         "bertscore_f1": F1.mean().item(),
+    #     }
 
-        self.results.update(bert_scores)
-        return bert_scores
+    #     self.results.update(bert_scores)
+    #     return bert_scores
 
-    def rouge_scores(self) -> dict:
-        """Calculate ROUGE scores for text overlap quality."""
-        originals = self.df["Original"].tolist()
-        llm_replaced = self.df["LLM Replaced text"].tolist()
+    # def rouge_scores(self) -> dict:
+    #     """Calculate ROUGE scores for text overlap quality."""
+    #     originals = self.df["Original"].tolist()
+    #     llm_replaced = self.df["LLM Replaced text"].tolist()
 
-        rouge_results = self.rouge.compute(
-            predictions=llm_replaced, references=originals
-        )
+    #     rouge_results = self.rouge.compute(
+    #         predictions=llm_replaced, references=originals
+    #     )
 
-        rouge_scores = {
-            "rouge1_f1": rouge_results["rouge1"],
-            "rouge2_f1": rouge_results["rouge2"],
-            "rougeL_f1": rouge_results["rougeL"],
-            "rougeLsum_f1": rouge_results["rougeLsum"],
-        }
+    #     rouge_scores = {
+    #         "rouge1_f1": rouge_results["rouge1"],
+    #         "rouge2_f1": rouge_results["rouge2"],
+    #         "rougeL_f1": rouge_results["rougeL"],
+    #         "rougeLsum_f1": rouge_results["rougeLsum"],
+    #     }
 
-        self.results.update(rouge_scores)
-        return rouge_scores
+    #     self.results.update(rouge_scores)
+    #     return rouge_scores
 
-    def meteor_score(self) -> float:
-        """Calculate METEOR score - considers synonyms and paraphrases."""
-        originals = self.df["Original"].tolist()
-        llm_replaced = self.df["LLM Replaced text"].tolist()
+    # def meteor_score(self) -> float:
+    #     """Calculate METEOR score - considers synonyms and paraphrases."""
+    #     originals = self.df["Original"].tolist()
+    #     llm_replaced = self.df["LLM Replaced text"].tolist()
 
-        meteor_result = self.meteor.compute(
-            predictions=llm_replaced, references=originals
-        )
+    #     meteor_result = self.meteor.compute(
+    #         predictions=llm_replaced, references=originals
+    #     )
 
-        meteor_score = meteor_result["meteor"]
-        self.results["meteor_score"] = meteor_score
-        return meteor_score
+    #     meteor_score = meteor_result["meteor"]
+    #     self.results["meteor_score"] = meteor_score
+    #     return meteor_score
 
     def run_composite_evaluation(self) -> dict:
         exact_acc = self.exact_accuracy()
         contextual_sim = self.contextual_word_similarity()
         sentence_sim = self.sentence_transformer_similarity()
-        bert_scores = self.bert_score_evaluation()
-        rouge_results = self.rouge_scores()
-        meteor = self.meteor_score()
+        # bert_scores = self.bert_score_evaluation()
+        # rouge_results = self.rouge_scores()
+        # meteor = self.meteor_score()
         print("Number of samples evaluated:", self.results["samples_evaluated"])
         print(f"Exact Accuracy:{exact_acc:.4f}")
         print(f"Contextual Word Similarity:{contextual_sim:.4f}")
         print(f"Sentence Semantic Similarity:{sentence_sim:.4f}")
-        print(f"BERTScore F1:{bert_scores['bertscore_f1']:.4f}")
-        print(f"BERTScore Precision:{bert_scores['bertscore_precision']:.4f}")
-        print(f"BERTScore Recall:{bert_scores['bertscore_recall']:.4f}")
-        print(f"ROUGE-L F1:{rouge_results['rougeL_f1']:.4f}")
-        print(f"ROUGE-1 F1:{rouge_results['rouge1_f1']:.4f}")
-        print(f"ROUGE-2 F1:{rouge_results['rouge2_f1']:.4f}")
-        print(f"METEOR Score:{meteor:.4f}")
+        # print(f"BERTScore F1:{bert_scores['bertscore_f1']:.4f}")
+        # print(f"BERTScore Precision:{bert_scores['bertscore_precision']:.4f}")
+        # print(f"BERTScore Recall:{bert_scores['bertscore_recall']:.4f}")
+        # print(f"ROUGE-L F1:{rouge_results['rougeL_f1']:.4f}")
+        # print(f"ROUGE-1 F1:{rouge_results['rouge1_f1']:.4f}")
+        # print(f"ROUGE-2 F1:{rouge_results['rouge2_f1']:.4f}")
+        # print(f"METEOR Score:{meteor:.4f}")
 
         return self.results
 
@@ -295,15 +296,15 @@ if __name__ == "__main__":
         f.write(
             f"- Sentence Transformer Similarity: {results['sentence_transformer_similarity']:.4f}\n"
         )
-        f.write(f"- METEOR Score: {results['meteor_score']:.4f}\n\n")
+        # f.write(f"- METEOR Score: {results['meteor_score']:.4f}\n\n")
 
-        f.write(f"BERTScore Metrics:\n")
-        f.write(f"- Precision: {results['bertscore_precision']:.4f}\n")
-        f.write(f"- Recall: {results['bertscore_recall']:.4f}\n")
-        f.write(f"- F1: {results['bertscore_f1']:.4f}\n\n")
+        # f.write(f"BERTScore Metrics:\n")
+        # f.write(f"- Precision: {results['bertscore_precision']:.4f}\n")
+        # f.write(f"- Recall: {results['bertscore_recall']:.4f}\n")
+        # f.write(f"- F1: {results['bertscore_f1']:.4f}\n\n")
 
-        f.write(f"ROUGE Metrics:\n")
-        f.write(f"- ROUGE-1 F1: {results['rouge1_f1']:.4f}\n")
-        f.write(f"- ROUGE-2 F1: {results['rouge2_f1']:.4f}\n")
-        f.write(f"- ROUGE-L F1: {results['rougeL_f1']:.4f}\n")
-        f.write(f"- ROUGE-Lsum F1: {results['rougeLsum_f1']:.4f}\n")
+        # f.write(f"ROUGE Metrics:\n")
+        # f.write(f"- ROUGE-1 F1: {results['rouge1_f1']:.4f}\n")
+        # f.write(f"- ROUGE-2 F1: {results['rouge2_f1']:.4f}\n")
+        # f.write(f"- ROUGE-L F1: {results['rougeL_f1']:.4f}\n")
+        # f.write(f"- ROUGE-Lsum F1: {results['rougeLsum_f1']:.4f}\n")
