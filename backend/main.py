@@ -8,7 +8,14 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 from pydub import AudioSegment
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
+from fastapi import (
+    FastAPI,
+    WebSocket,
+    WebSocketDisconnect,
+    UploadFile,
+    File,
+    HTTPException,
+)
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -85,10 +92,12 @@ app.add_middleware(
 )
 
 # --- Mount static directory for serving generated files ---
+os.makedirs("outputs", exist_ok=True)
 app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
 
 
 # --- HTTP Endpoints ---
+
 
 @app.get("/")
 async def read_root():
@@ -240,14 +249,15 @@ async def process_and_synthesize_audio(
 @app.websocket("/ws/process")
 async def process_audio_websocket(websocket: WebSocket):
     await websocket.accept()
-    await websocket.send_json({"step": "engine_ready", "message": "Backend models loaded and ready."})
+    await websocket.send_json(
+        {"step": "engine_ready", "message": "Backend models loaded and ready."}
+    )
     print("Client connected via WebSocket, engine ready signal sent.")
     try:
         while True:
-            
             payload = await websocket.receive_json()
             temp_audio_path = None
-            
+
             try:
                 audio_data_b64 = payload.get("audio_data")
                 file_name = payload.get("file_name")
@@ -259,21 +269,23 @@ async def process_audio_websocket(websocket: WebSocket):
                 original_extension = os.path.splitext(file_name)[1]
 
                 in_memory_file = io.BytesIO(audio_bytes)
-                
+
                 # Load the audio from the in-memory file, explicitly setting the format
-                audio_segment = AudioSegment.from_file(in_memory_file, format=original_extension.replace('.', ''))
-                
+                audio_segment = AudioSegment.from_file(
+                    in_memory_file, format=original_extension.replace(".", "")
+                )
+
                 # --- Export as a standardized WAV file for your ML models ---
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                 temp_audio_path = os.path.join("temp", f"temp_audio_{timestamp}.wav")
-                
+
                 # Ensure it's mono, 16kHz, and 16-bit for your models
                 audio_segment = audio_segment.set_channels(1)
                 audio_segment = audio_segment.set_frame_rate(16000)
                 audio_segment = audio_segment.set_sample_width(2)
-                
+
                 audio_segment.export(temp_audio_path, format="wav")
-                
+
                 print(f"Successfully converted {file_name} to {temp_audio_path}")
 
                 # Stage 1: Transcription
@@ -285,7 +297,12 @@ async def process_audio_websocket(websocket: WebSocket):
                     min_speech_duration_ms=int(vad_params.get("minSpeechMs", 250)),
                     min_silence_duration_ms=int(vad_params.get("minSilenceMs", 100)),
                 )
-                await websocket.send_json({"step": "transcription", "data": {"transcript": transcript_result, "vadGaps": vad_gaps}})
+                await websocket.send_json(
+                    {
+                        "step": "transcription",
+                        "data": {"transcript": transcript_result, "vadGaps": vad_gaps},
+                    }
+                )
                 print(f"WS Step 1: Transcription complete. Sent: {transcript_result}")
                 await asyncio.sleep(0.1)
 
@@ -294,14 +311,28 @@ async def process_audio_websocket(websocket: WebSocket):
                 reconstructed_sentence = mask.fill_masks(transcript_result)
                 original_words = transcript_result.split()
                 final_words = reconstructed_sentence.split()
-                reconstructed_only_words = " ".join([word for word in final_words if word not in original_words])
-                await websocket.send_json({"step": "reconstruction", "data": {"reconstructed_words": reconstructed_only_words, "full_reconstructed_text": reconstructed_sentence}})
-                print(f"WS Step 2: Reconstruction complete. Sent: {reconstructed_sentence}")
+                reconstructed_only_words = " ".join(
+                    [word for word in final_words if word not in original_words]
+                )
+                await websocket.send_json(
+                    {
+                        "step": "reconstruction",
+                        "data": {
+                            "reconstructed_words": reconstructed_only_words,
+                            "full_reconstructed_text": reconstructed_sentence,
+                        },
+                    }
+                )
+                print(
+                    f"WS Step 2: Reconstruction complete. Sent: {reconstructed_sentence}"
+                )
                 await asyncio.sleep(0.1)
 
                 # Stage 3: Synthesis
                 print("WS Step 3: Starting synthesis...")
-                audio = StandardAudio.from_ffmpeg_audio(FFmpegAudio.from_audio_object(temp_audio_path))
+                audio = StandardAudio.from_ffmpeg_audio(
+                    FFmpegAudio.from_audio_object(temp_audio_path)
+                )
                 wave_bytes, sr = audio.infer(f5_tts_instance, reconstructed_sentence)
 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -314,7 +345,15 @@ async def process_audio_websocket(websocket: WebSocket):
                     wf.setsampwidth(2)
                     wf.writeframes(wave_bytes.tobytes())
 
-                await websocket.send_json({"step": "synthesis", "data": {"audio_url": f"/{output_path.replace(os.path.sep, '/')}", "synthesisFilename": output_filename}})
+                await websocket.send_json(
+                    {
+                        "step": "synthesis",
+                        "data": {
+                            "audio_url": f"/{output_path.replace(os.path.sep, '/')}",
+                            "synthesisFilename": output_filename,
+                        },
+                    }
+                )
                 print(f"WS Step 3: Synthesis complete. File saved to {output_path}")
                 print("WS processing finished. Waiting for next request.")
 
@@ -327,5 +366,5 @@ async def process_audio_websocket(websocket: WebSocket):
         print("WebSocket client disconnected.")
     except Exception as e:
         print(f"An error occurred in WebSocket: {e}")
-        if not websocket.client_state.name == 'DISCONNECTED':
-             await websocket.send_json({"error": str(e)})
+        if not websocket.client_state.name == "DISCONNECTED":
+            await websocket.send_json({"error": str(e)})
